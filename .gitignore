@@ -1,0 +1,4 @@
+/target
+/tui-rs
+Cargo.lock
+storage.csv

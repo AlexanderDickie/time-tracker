@@ -1,0 +1,200 @@
+use std::error::Error;
+use std::fs::{self, OpenOptions, File::{self}};
+use std::io::{SeekFrom, Read, Write, Seek};
+use std::collections::HashMap;
+use std::fmt::{self, Formatter, Display};
+use chrono::{NaiveDate, ParseError, Datelike};
+
+use crate::FILE_PATH;
+
+/* storage is a csv in the form of:
+ * 29-10-22,16
+ * .....
+ * which represents date and number of blocks timed
+ */
+
+pub struct Storage {
+    file: File
+}
+
+pub struct InputLine {
+    date: NaiveDate,
+    blocks: usize,
+}
+
+impl Display for InputLine {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let day = self.date.day();
+        let month = self.date.month();
+        let year = self.date.year() % 2000;
+        write!(f, "{}-{}-{},{}", day, month, year, self.blocks)
+    }
+}
+
+impl InputLine {
+    pub fn parse_from_str(s: &str) -> InputLine {
+        let mut iter = s.split(',');
+        let date = NaiveDate::parse_from_str(iter.next().unwrap(), "%d-%m-%y").unwrap();
+        let blocks: usize = iter
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        InputLine{ date, blocks }
+    }
+}
+
+
+
+impl Storage {
+    pub fn build(file_path: &str) -> Storage {
+        // open file if  it exist, if not create it
+        let mut options = OpenOptions::new();
+        options.read(true);
+        options.write(true);
+        options.create(true);
+        let file = options.open(file_path).unwrap();
+
+        Storage{ file }
+    }
+
+    // more primitive file writing/reading functions
+    
+    // reads n lines from the end of a file very quickly (overkill) 
+    fn read_lines_from_end(&mut self, n_lines: usize) -> String {
+        let file = &mut self.file;
+
+        // check for empty file
+        if file.seek(SeekFrom::End(-1)).is_err() {
+            return String::from("");
+        }
+        let mut byte: [u8; 1] = [0];
+
+        let mut lines_count = 0;
+        let mut out = String::new();
+        // reading changes the seek position to the end of the read
+        loop {
+
+            file.read_exact(&mut byte).unwrap();
+
+            if &byte == b"\n" {
+                lines_count += 1;
+            }
+            // move back one position (read_exact moves our seek one forward)
+            file.seek(SeekFrom::Current(-2)).unwrap();
+
+            if lines_count == n_lines + 1 {
+                // we seeked on the \n before the n lines, so increment by 1
+                file.seek(SeekFrom::Current(2)).unwrap();
+                file.read_to_string(&mut out).unwrap();
+                out.pop(); // remove last \n
+                return out; 
+                // if number of lines in file <= n_lines, return lines of whole file
+            } else if file.stream_position().unwrap() == 0 { 
+                file.read_to_string(&mut out).unwrap();
+                out.pop();
+                return out;
+            }
+
+        }
+
+    }
+
+
+
+
+    /* output the past 30 days starting and including from end, if we havent logged any date in
+     * this period then include that date with 0 blocks
+     */
+
+    pub fn read_past_days(&mut self, end: NaiveDate, n: usize) -> Vec<InputLine> {
+            let logged = self.read_lines_from_end(n);
+            let logged_map: HashMap<NaiveDate, usize> = logged
+                .lines()
+                .map(|l| {
+                    let input_line = InputLine::parse_from_str(l);
+                    (input_line.date, input_line.blocks)
+                })
+                .collect();
+
+            let mut out = Vec::new();
+            let mut date = end;
+            let mut blocks: usize;
+            for _ in 0..n {
+                if logged_map.contains_key(&date) {
+                    blocks = logged_map[&date];
+                } else {
+                    blocks = 0;
+                }
+                out.push(InputLine{ date, blocks });
+                date = date.pred();
+            }
+            // oldest dates at top of vector
+            out.into_iter().rev().collect()
+
+        }
+
+    /* modify a date's number of blocks 
+     * 
+     * currently working for date >= last written date
+     */
+
+    pub fn alter_todays_blocks(&mut self, date: NaiveDate, n: i32) {
+        let file = &mut self.file;
+        let last_line_str = &self.read_lines_from_end(1);
+
+        if last_line_str == &"".to_string() {
+            assert!(n > 0);
+            let new_input_line = InputLine{ date, blocks: n as usize};
+            file.write_all(&new_input_line.to_string().into_bytes());
+        } else {
+            let last_line = InputLine::parse_from_str(last_line_str);
+
+            assert!(last_line.date <= date);
+
+            if last_line.date < date {
+                assert!(n > 0);
+                let new_input_line = InputLine{ date, blocks: n as usize};
+                file.write_all(&new_input_line.to_string().into_bytes());
+            } else {
+                // find position of where the 
+            }
+
+        }
+
+        let new_date_input = InputLine{ date, blocks:n };
+
+        if last_line_str == "" {
+            let mu
+            self.storage.file.write()
+        } else {
+
+        }
+
+        let last_line = InputLine::parse_from_str(last_line_str);
+        // are we modifying our last input line or creating a new input line?
+        let mut blocks = n;
+        let mut seek_pos = SeekFrom::End(0);
+
+        if last.date == date {
+            // alter the last line, plus one and set seek position to 
+            blocks = last.blocks + 1;
+            seek_pos = 
+        } else if last.date < date {
+            blocks = 1;
+            seek_pos = SeekFrom::Current(-1 * last_line.len());
+        } else {
+            panic!("not modifying end date");
+        }
+
+        let blocks = blocks as usize;
+
+        let new_input_line = InputLine{date, blocks};
+
+
+
+    }
+
+        
+}
+
