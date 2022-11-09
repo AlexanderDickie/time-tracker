@@ -1,10 +1,15 @@
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent, App};
 use tokio::{self,
     time::{interval, Duration},
 };
+use chrono::{Local};
+use storage::Storage;
 
+mod storage;
+
+static DB_PATH: &str = "./storage.rs";
 static DURATION: usize = 60 * 25;
 
 enum TimeMessage {
@@ -16,9 +21,10 @@ struct Timing {
     in_progress: Mutex<Option<async_runtime::JoinHandle<()>>>,
 }
 
-
 fn main() {
-    let mut timing = Timing{ in_progress: Mutex::new(None) };
+    let state = Arc::new(Mutex::new(Storage::build(DB_PATH)));
+    
+    let timing = Timing{ in_progress: Mutex::new(None) };
     let (tx, mut rx) = tauri::async_runtime::channel(16);
 
     let start = CustomMenuItem::new("start".to_string(), "Start");
@@ -32,20 +38,27 @@ fn main() {
         .add_item(stop);
 
     tauri::Builder::default()
-    .system_tray(SystemTray::new().with_menu(tray_menu_inactive.clone()))
+    .manage(Arc::clone(&state))
     .setup(|app| {
            let _app = app.handle();
-           // manages ui of system tray
+           // manages ui of system tray, increments date upon timer completion
            async_runtime::spawn(async move {
                loop {
                    match rx.recv().await.unwrap() {
                        TimeMessage::Time(time) => _app.tray_handle().set_title(&format!("{}", time)).unwrap(),
-                       TimeMessage::Finished => _app.tray_handle().set_title("Inactive").unwrap(),
+                       TimeMessage::Finished => {
+                           _app.tray_handle().set_title("Inactive").unwrap();
+
+                           let today = Local::today().naive_local();
+                           let data = state.lock().unwrap();
+                           data.increment_or_insert_date(today);
+                       },
                    }
                }
            });
            Ok(())
     })
+    .system_tray(SystemTray::new().with_menu(tray_menu_inactive.clone()))
     .on_system_tray_event(move |app, event| match event {
         SystemTrayEvent::MenuItemClick { id, .. } => {
 
@@ -63,14 +76,13 @@ fn main() {
                         }
 
                         tx1.send(TimeMessage::Finished).await;
-                        //write to storage
                     });
 
                     let mut data = timing.in_progress.lock().unwrap();
                     *data = Some(join_handle);
                     
-                    // render active menu
-                    app.tray_handle().set_menu(tray_menu_active.clone());
+                    // update menu to active state 
+                    app.tray_handle().set_menu(tray_menu_active.clone()).unwrap();
                 },
 
                 "stop" => {
@@ -79,8 +91,8 @@ fn main() {
                     data.as_ref().unwrap().abort();
                     *data = None;
 
-                    app.tray_handle().set_menu(tray_menu_inactive.clone());
-                    app.tray_handle().set_title("Inactive");
+                    app.tray_handle().set_menu(tray_menu_inactive.clone()).unwrap();
+                    app.tray_handle().set_title("Inactive").unwrap();
                 },
 
                 "pause" => {
@@ -95,6 +107,5 @@ fn main() {
     })
     .run(tauri::generate_context!())
         .expect("error while running tauri application");
-
 }
 
