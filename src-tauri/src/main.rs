@@ -9,7 +9,7 @@ use storage::Storage;
 
 mod storage;
 
-static DB_PATH: &str = "./storage.rs";
+static DB_PATH: &str = "./storage.db";
 static DURATION: usize = 60 * 25;
 
 enum TimeMessage {
