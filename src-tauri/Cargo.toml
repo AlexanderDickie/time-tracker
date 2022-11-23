@@ -20,8 +20,8 @@ serde = { version = "1.0", features = ["derive"] }
 # the git repo is upstream from the cargo repo and adds set_title() for the system tray
 tauri = {git = "https://github.com/tauri-apps/tauri", features = ["api-all", "system-tray"] }
 tokio = {version = "1.21.2", features = ["full"] }
-rusqlite = "0.28.0"
-chrono = "0.4.22"
+rusqlite = {version = "0.28.0", features = ["chrono"] }
+chrono = {version = "0.4.22", features = ["serde"] }
 
 [features]
 # by default Tauri runs in production mode

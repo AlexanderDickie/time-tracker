@@ -1,13 +1,13 @@
-
 use std::sync::{Arc, Mutex};
-use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent, App};
+use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent, App, Manager};
 use tokio::{self,
     time::{interval, Duration},
 };
 use chrono::{Local};
-use storage::Storage;
+use crate::storage::Storage;
 
 mod storage;
+mod utils;
 
 static DB_PATH: &str = "./storage.db";
 static DURATION: usize = 60 * 25;
@@ -20,6 +20,7 @@ enum TimeMessage {
 struct Timing {
     in_progress: Mutex<Option<async_runtime::JoinHandle<()>>>,
 }
+
 
 fn main() {
     let state = Arc::new(Mutex::new(Storage::build(DB_PATH)));
@@ -40,12 +41,19 @@ fn main() {
     tauri::Builder::default()
     .manage(Arc::clone(&state))
     .setup(|app| {
+
+            // dont show app icon on mac os's bottom menubar
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
            let _app = app.handle();
            // manages ui of system tray, increments date upon timer completion
            async_runtime::spawn(async move {
                loop {
                    match rx.recv().await.unwrap() {
-                       TimeMessage::Time(time) => _app.tray_handle().set_title(&format!("{}", time)).unwrap(),
+                       TimeMessage::Time(time) => _app
+                           .tray_handle()
+                           .set_title(&utils::format_time_remaining(time, DURATION)).unwrap(),
                        TimeMessage::Finished => {
                            _app.tray_handle().set_title("Inactive").unwrap();
 
@@ -108,4 +116,5 @@ fn main() {
     .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
 

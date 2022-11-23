@@ -14,6 +14,7 @@ use tui::{
 
 mod app;
 mod ui;
+mod utils;
 
 static FILE_PATH: &str = "./storage.csv";
 static DURATION: usize = 60 * 25;
