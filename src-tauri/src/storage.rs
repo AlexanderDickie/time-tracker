@@ -12,20 +12,16 @@ impl Storage {
     pub fn build(path: &str) -> Storage {
         //create if not exists, then load database
         let con = Connection::open(path).unwrap();
-
         //create if not exists, then load table
         con.execute(
             "CREATE TABLE IF NOT EXISTS Storage(
              Date DATE PRIMARY KEY,
              Blocks INTEGER DEFAULT 0
          );", []).unwrap();
-
         Storage { db: con }
     }
-
     pub fn increment_or_insert_date(&self, date: NaiveDate) {
         let _date = date.format("%Y-%m-%d").to_string();
-
         if let 0 = self.db.execute(
             "UPDATE Storage
             SET blocks = blocks + 1
@@ -38,7 +34,6 @@ impl Storage {
                             ", [&_date]).unwrap();
         }
     }
-
     // gets previous n inputs ending at end
     pub fn get_previous(&self, end: NaiveDate, n: usize) -> Vec<(NaiveDate, usize)>{
         let mut stmt = self.db.prepare(&format!("
@@ -47,12 +42,10 @@ impl Storage {
                                               ORDER BY Date DESC
                                               LIMIT {};
                                               ", n)).unwrap();
-        
         let block_map = stmt.query_map([], |row| Ok((row.get_unwrap::<usize, NaiveDate>(0), row.get_unwrap::<usize, usize>(1))))
             .unwrap().
             map(|tup| tup.unwrap())
             .collect::<HashMap<NaiveDate, usize>>();
-
         let mut out = Vec::new();
         let mut cur = end;
         for _ in 0..n {
@@ -65,7 +58,6 @@ impl Storage {
         }
         // earliest date at the top
         out.into_iter().rev().collect()
-
     }
 }
 

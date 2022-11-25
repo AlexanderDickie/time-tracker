@@ -1,8 +1,8 @@
-import {React, useEffect} from 'react';
-import { invoke } from "@tauri-apps/api/tauri"
+import React, { useEffect, useState } from 'react';
 import Chart from 'components/Chart';
+import { invoke } from "@tauri-apps/api/tauri"
 
-const data = [
+const data1 = [
   {
     name: "Sun",
     value: 10
@@ -34,13 +34,19 @@ const data = [
 ];
 
 export default function Index() {
+    const [data,setData] = useState(data1);
+
     useEffect(() => {
-        invoke('get_previous_ending_today', { n: 'World' })
-            .then(console.log)
-            .catch(console.error)
+        invoke('get_previous')
+        .then((response) => {
+                console.log(response);
+                setData(response);
+            })
+        .catch(console.error)
     }, []);
 
-  return (  
-    <Chart data = {data} />
-  )
+
+    return (
+        <Chart data = {data} />
+    );
 }
