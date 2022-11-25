@@ -3,7 +3,7 @@ use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, Sys
 use tokio::{self,
     time::{interval, Duration},
 };
-use chrono::{Local};
+use chrono::{Local, NaiveDate};
 use crate::storage::Storage;
 
 mod storage;
@@ -11,6 +11,8 @@ mod utils;
 
 static DB_PATH: &str = "./storage.db";
 static DURATION: usize = 60 * 25;
+
+struct AppState(Arc<Mutex<Storage>>);
 
 enum TimeMessage {
     Time(usize),
@@ -21,6 +23,13 @@ struct Timing {
     in_progress: Mutex<Option<async_runtime::JoinHandle<()>>>,
 }
 
+#[tauri::command]
+fn get_previous_ending_today(state: tauri::State<AppState>, n: String) -> String {
+    let data = state.0.lock().unwrap();
+    let today = Local::today().naive_local();
+    data.get_previous(today, 30);
+    "yoo".into()
+}
 
 fn main() {
     let state = Arc::new(Mutex::new(Storage::build(DB_PATH)));
@@ -39,7 +48,7 @@ fn main() {
         .add_item(stop);
 
     tauri::Builder::default()
-    .manage(Arc::clone(&state))
+    .manage(AppState(Arc::clone(&state)))
     .setup(|app| {
 
             // dont show app icon on mac os's bottom menubar
@@ -113,6 +122,7 @@ fn main() {
         SystemTrayEvent::LeftClick {..} => (),
         _ => (),
     })
+    .invoke_handler(tauri::generate_handler![get_previous_ending_today])
     .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

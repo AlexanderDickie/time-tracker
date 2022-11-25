@@ -1,6 +1,5 @@
-import React from 'react';
-
-import Home from 'containers/Home';
+import {React, useEffect} from 'react';
+import { invoke } from "@tauri-apps/api/tauri"
 import Chart from 'components/Chart';
 
 const data = [
@@ -35,6 +34,12 @@ const data = [
 ];
 
 export default function Index() {
+    useEffect(() => {
+        invoke('get_previous_ending_today', { n: 'World' })
+            .then(console.log)
+            .catch(console.error)
+    }, []);
+
   return (  
     <Chart data = {data} />
   )
