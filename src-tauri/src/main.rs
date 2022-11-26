@@ -16,6 +16,7 @@ static DB_PATH: &str = "./storage.db";
 static DURATION: usize = 2;
 
 type AppState = Arc<Mutex<Storage>>;
+#[derive(Debug)]
 enum TimeMessage {
     Time(usize),
     Finished,
