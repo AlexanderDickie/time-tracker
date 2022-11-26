@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent, App, Manager,
-WindowBuilder,
-WindowUrl};
+    WindowBuilder,
+    WindowUrl};
 use tokio::{self,
     time::{interval, Duration},
 };
@@ -13,7 +13,7 @@ mod storage;
 mod utils;
 
 static DB_PATH: &str = "./storage.db";
-static DURATION: usize = 2;
+static DURATION: usize = 25 * 60;
 
 type AppState = Arc<Mutex<Storage>>;
 #[derive(Debug)]
@@ -39,6 +39,11 @@ fn get_previous(state: tauri::State<AppState>) -> Vec<ChartInput> {
     x.into_iter().map(|ar| ChartInput{name: ar.0.to_string(), value: ar.1}).collect::<Vec<ChartInput>>()
 }
 
+#[tauri::command]
+fn close_alert_window(window: tauri::Window) {
+    window.close().unwrap();
+}
+
 fn main() {
     let state = Arc::new(Mutex::new(Storage::build(DB_PATH)));
     let timing = Timing{ in_progress: Mutex::new(None) };
@@ -51,7 +56,7 @@ fn main() {
     let tray_menu_inactive = SystemTrayMenu::new()
         .add_item(start)
         .add_item(view.clone());
-    // tray menu that is moved into the timer ui changing/ db writing thread
+    // below is the tray menu that is moved into the timer ui changing/ db writing thread
     let _tray_menu_inactive = tray_menu_inactive.clone();
     let tray_menu_active = SystemTrayMenu::new()
         .add_item(pause)
@@ -86,65 +91,73 @@ fn main() {
                                 &_app,
                                 "alert",
                                 WindowUrl::App("alert".into())
-                            ).build().unwrap();
+                            )
+                                .inner_size(400.0, 200.0)
+                                .always_on_top(true)
+                                .center()
+                                .decorations(false)
+                                .build().unwrap();
+
                         },
                     }
                 }
             });
             Ok(())
         })
-        .system_tray(SystemTray::new().with_menu(tray_menu_inactive.clone()))
-    .on_system_tray_event(move |app, event| match event {
-        SystemTrayEvent::MenuItemClick { id, .. } => {
-            match id.as_str() {
-                "start" => {
-                    let tx1 = tx.clone();
-                    // spawn timer thread
-                    let join_handle = async_runtime::spawn(async move {
-                        let mut interval = interval(Duration::from_secs(1));
-                        for i in 0..(DURATION) {
-                            interval.tick().await;
-                            tx1.send(TimeMessage::Time(i)).await.unwrap();
-                        }
-                        tx1.send(TimeMessage::Finished).await.unwrap();
-                    });
-                    let mut data = timing.in_progress.lock().unwrap();
-                    *data = Some(join_handle);
-                    app.tray_handle().set_menu(tray_menu_active.clone()).unwrap();
-                },
-                "stop" => {
-                    // abort timer thread, update menu to inactive state
-                    let mut data = timing.in_progress.lock().unwrap();
-                    data.as_ref().unwrap().abort();
-                    *data = None;
-                    app.tray_handle().set_menu(tray_menu_inactive.clone()).unwrap();
-                    app.tray_handle().set_title("Inactive").unwrap();
-                },
-                "pause" => {
-                },
-                "view" => {
-                    let alert_window = WindowBuilder::new(
-                        app,
-                        "view",
-                        WindowUrl::App("index.html".into())
+        .system_tray(SystemTray::new()
+            .with_menu(tray_menu_inactive.clone())
+            .with_title("Inactive"))
+        .on_system_tray_event(move |app, event| match event {
+            SystemTrayEvent::MenuItemClick { id, .. } => {
+                match id.as_str() {
+                    "start" => {
+                        let tx1 = tx.clone();
+                        // spawn timer thread
+                        let join_handle = async_runtime::spawn(async move {
+                            let mut interval = interval(Duration::from_secs(1));
+                            for i in 0..(DURATION) {
+                                interval.tick().await;
+                                tx1.send(TimeMessage::Time(i)).await.unwrap();
+                            }
+                            tx1.send(TimeMessage::Finished).await.unwrap();
+                        });
+                        let mut data = timing.in_progress.lock().unwrap();
+                        *data = Some(join_handle);
+                        app.tray_handle().set_menu(tray_menu_active.clone()).unwrap();
+                    },
+                    "stop" => {
+                        // abort timer thread, update menu to inactive state
+                        let mut data = timing.in_progress.lock().unwrap();
+                        data.as_ref().unwrap().abort();
+                        *data = None;
+                        app.tray_handle().set_menu(tray_menu_inactive.clone()).unwrap();
+                        app.tray_handle().set_title("Inactive").unwrap();
+                    },
+                    "pause" => {
+                    },
+                    "view" => {
+                        let alert_window = WindowBuilder::new(
+                            app,
+                            "view",
+                            WindowUrl::App("index.html".into())
                         ).build().unwrap();
-                },
-                _ => {},
+                    },
+                    _ => {},
                 }
-        }
-        SystemTrayEvent::LeftClick {..} => (),
-        _ => (),
-    })
-    .invoke_handler(tauri::generate_handler![get_previous])
-    .build(tauri::generate_context!())
-    .expect("error while building application")
-    .run(|_app_handle, event| match event {
-        // prevent app shutdown on window close
-        tauri::RunEvent::ExitRequested { api, .. } => {
-            api.prevent_exit();
-        }
-        _ => {}
-    });
+            }
+            SystemTrayEvent::LeftClick {..} => (),
+            _ => (),
+        })
+        .invoke_handler(tauri::generate_handler![get_previous, close_alert_window])
+        .build(tauri::generate_context!())
+        .expect("error while building application")
+        .run(|_app_handle, event| match event {
+            // prevent app shutdown on window close
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                api.prevent_exit();
+            }
+            _ => {}
+        });
 }
 
 
