@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
 use serde::Serialize;
-use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent, App, Manager};
+use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent, App, Manager,
+WindowBuilder,
+WindowUrl};
 use tokio::{self,
     time::{interval, Duration},
 };
@@ -11,7 +13,7 @@ mod storage;
 mod utils;
 
 static DB_PATH: &str = "./storage.db";
-static DURATION: usize = 60 * 25;
+static DURATION: usize = 2;
 
 type AppState = Arc<Mutex<Storage>>;
 enum TimeMessage {
@@ -44,42 +46,55 @@ fn main() {
     let start = CustomMenuItem::new("start".to_string(), "Start");
     let pause = CustomMenuItem::new("pause".to_string(), "Pause");
     let stop = CustomMenuItem::new("stop".to_string(), "Stop");
+    let view = CustomMenuItem::new("view".to_string(), "View");
     let tray_menu_inactive = SystemTrayMenu::new()
-        .add_item(start);
+        .add_item(start)
+        .add_item(view.clone());
+    // tray menu that is moved into the timer ui changing/ db writing thread
+    let _tray_menu_inactive = tray_menu_inactive.clone();
     let tray_menu_active = SystemTrayMenu::new()
         .add_item(pause)
-        .add_item(stop);
+        .add_item(stop)
+        .add_item(view);
 
     tauri::Builder::default()
-    .manage(Arc::clone(&state))
-    .setup(|app| {
+        .manage(Arc::clone(&state))
+        .setup(|app| {
             // dont show app icon on mac os's bottom menubar
-            // #[cfg(target_os = "macos")]
-            // app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-           let _app = app.handle();
-            // spawn thread to receive messages from an active timer thread then update system tray
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            // thread to receive messages from timer thread, updates timer ui, increments blocks
+            // and shows alert window 
             // time
-           async_runtime::spawn(async move {
-               loop {
-                   match rx.recv().await.unwrap() {
-                       TimeMessage::Time(time) => _app
-                           .tray_handle()
-                           .set_title(&utils::format_time_remaining(time, DURATION)).unwrap(),
-                       TimeMessage::Finished => {
-                           _app.tray_handle().set_title("Inactive").unwrap();
-                           let today = Local::today().naive_local();
-                           let data = state.lock().unwrap();
-                           data.increment_or_insert_date(today);
-                       },
-                   }
-               }
-           });
-           Ok(())
-    })
-    .system_tray(SystemTray::new().with_menu(tray_menu_inactive.clone()))
+            let _app = app.handle();
+            async_runtime::spawn(async move {
+                loop {
+                    match rx.recv().await.unwrap() {
+                        TimeMessage::Time(time) => _app
+                            .tray_handle()
+                            .set_title(&utils::format_time_remaining(time, DURATION)).unwrap(),
+                        TimeMessage::Finished => {
+                            _app.tray_handle().set_title("Inactive").unwrap();
+                            _app.tray_handle().set_menu(_tray_menu_inactive.clone()).unwrap();
+
+                            let today = Local::today().naive_local();
+                            let data = state.lock().unwrap();
+                            data.increment_or_insert_date(today);
+
+                            let alert_window = WindowBuilder::new(
+                                &_app,
+                                "alert",
+                                WindowUrl::App("alert".into())
+                            ).build().unwrap();
+                        },
+                    }
+                }
+            });
+            Ok(())
+        })
+        .system_tray(SystemTray::new().with_menu(tray_menu_inactive.clone()))
     .on_system_tray_event(move |app, event| match event {
         SystemTrayEvent::MenuItemClick { id, .. } => {
-
             match id.as_str() {
                 "start" => {
                     let tx1 = tx.clone();
@@ -88,9 +103,9 @@ fn main() {
                         let mut interval = interval(Duration::from_secs(1));
                         for i in 0..(DURATION) {
                             interval.tick().await;
-                            tx1.send(TimeMessage::Time(i)).await;
+                            tx1.send(TimeMessage::Time(i)).await.unwrap();
                         }
-                        tx1.send(TimeMessage::Finished).await;
+                        tx1.send(TimeMessage::Finished).await.unwrap();
                     });
                     let mut data = timing.in_progress.lock().unwrap();
                     *data = Some(join_handle);
@@ -106,15 +121,29 @@ fn main() {
                 },
                 "pause" => {
                 },
-                _ => (),
-            }
+                "view" => {
+                    let alert_window = WindowBuilder::new(
+                        app,
+                        "view",
+                        WindowUrl::App("index.html".into())
+                        ).build().unwrap();
+                },
+                _ => {},
+                }
         }
         SystemTrayEvent::LeftClick {..} => (),
         _ => (),
     })
     .invoke_handler(tauri::generate_handler![get_previous])
-    .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    .build(tauri::generate_context!())
+    .expect("error while building application")
+    .run(|_app_handle, event| match event {
+        // prevent app shutdown on window close
+        tauri::RunEvent::ExitRequested { api, .. } => {
+            api.prevent_exit();
+        }
+        _ => {}
+    });
 }
 
 
