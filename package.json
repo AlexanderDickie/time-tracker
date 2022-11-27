@@ -1,5 +1,5 @@
 {
-  "name": "nextauri",
+  "name": "time-tracker",
   "scripts": {
     "dev": "tauri dev",
     "tauri": "tauri",

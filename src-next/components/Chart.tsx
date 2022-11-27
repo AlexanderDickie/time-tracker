@@ -6,12 +6,12 @@ import { LineChart,
 } from 'recharts';
 
 
-type ChartInput = {
+export type ChartInput = {
     name: String,
     value: number,
 }
 
-export default function Chart({ data }: {data: Array<ChartInput>}) {
+export default function Chart({ data }: {data: any}) {
   return (
         <LineChart width={650} height={300} data={data}>
             <CartesianGrid vertical={false} opacity="0.2" />

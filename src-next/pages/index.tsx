@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import Chart from 'components/Chart';
+import Chart  from 'components/Chart';
 import { invoke } from "@tauri-apps/api/tauri"
 
 const data1 = [
@@ -38,8 +38,8 @@ export default function Index() {
 
     useEffect(() => {
         invoke('get_previous')
-        .then((response) => {
-                console.log(response);
+        .then((response: any)  => {
+                // console.log(response);
                 setData(response);
             })
         .catch(console.error)

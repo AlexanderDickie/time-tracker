@@ -12,10 +12,9 @@ use crate::storage::Storage;
 mod storage;
 mod utils;
 
-static DB_PATH: &str = "./storage.db";
-static DURATION: usize = 25 * 60;
+static DURATION: usize = 2;
 
-type AppState = Arc<Mutex<Storage>>;
+// type AppState = Arc<Mutex<Storage>>;
 #[derive(Debug)]
 enum TimeMessage {
     Time(usize),
@@ -31,13 +30,27 @@ struct ChartInput {
     value: usize,
 }
 
+// #[tauri::command]
+// fn get_previous(state: tauri::State<AppState>) -> Vec<ChartInput> {
+//     let data = state.lock().unwrap();
+//     let today = Local::today().naive_local();
+//     let x = data.get_previous(today, 30);
+//     x.into_iter().map(|ar| ChartInput{name: ar.0.to_string(), value: ar.1}).collect::<Vec<ChartInput>>()
+// }
+
 #[tauri::command]
-fn get_previous(state: tauri::State<AppState>) -> Vec<ChartInput> {
-    let data = state.lock().unwrap();
+fn get_previous(_app: tauri::AppHandle) -> Vec<ChartInput> {
+    let resource_path = _app
+        .path_resolver()
+        .resolve_resource("storage.db")
+        .expect("failed to resolve resource");
+    let _storage = Storage::init(&resource_path);
+
     let today = Local::today().naive_local();
-    let x = data.get_previous(today, 30);
+    let x = _storage.get_previous(today, 30);
     x.into_iter().map(|ar| ChartInput{name: ar.0.to_string(), value: ar.1}).collect::<Vec<ChartInput>>()
 }
+
 
 #[tauri::command]
 fn close_alert_window(window: tauri::Window) {
@@ -45,7 +58,7 @@ fn close_alert_window(window: tauri::Window) {
 }
 
 fn main() {
-    let state = Arc::new(Mutex::new(Storage::build(DB_PATH)));
+    // let state = Arc::new(Mutex::new(Storage::build
     let timing = Timing{ in_progress: Mutex::new(None) };
     let (tx, mut rx) = tauri::async_runtime::channel(16);
 
@@ -64,14 +77,12 @@ fn main() {
         .add_item(view);
 
     tauri::Builder::default()
-        .manage(Arc::clone(&state))
         .setup(|app| {
             // dont show app icon on mac os's bottom menubar
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             // thread to receive messages from timer thread, updates timer ui, increments blocks
             // and shows alert window 
-            // time
             let _app = app.handle();
             async_runtime::spawn(async move {
                 loop {
@@ -83,13 +94,17 @@ fn main() {
                             _app.tray_handle().set_title("Inactive").unwrap();
                             _app.tray_handle().set_menu(_tray_menu_inactive.clone()).unwrap();
 
+                            let resource_path = _app.path_resolver()
+                                .resolve_resource("storage.db")
+                                .expect("failed to resolve resouce");
+
+                            let _storage = Storage::init(resource_path);
                             let today = Local::today().naive_local();
-                            let data = state.lock().unwrap();
-                            data.increment_or_insert_date(today);
+                            _storage.increment_or_insert_date(today);
 
                             let alert_window = WindowBuilder::new(
                                 &_app,
-                                "alert",
+                                "alert.html",
                                 WindowUrl::App("alert".into())
                             )
                                 .inner_size(400.0, 200.0)
@@ -136,7 +151,7 @@ fn main() {
                     "pause" => {
                     },
                     "view" => {
-                        let alert_window = WindowBuilder::new(
+                        WindowBuilder::new(
                             app,
                             "view",
                             WindowUrl::App("index.html".into())
@@ -161,3 +176,21 @@ fn main() {
 }
 
 
+
+//
+//
+// use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent, App, Manager,
+//     WindowBuilder,
+//     WindowUrl};
+// // #![cfg_attr(
+// //   all(not(debug_assertions), target_os = "windows"),
+// //   windows_subsystem = "windows"
+// // )]
+//
+// fn main() {
+//   tauri::Builder::default()
+//     .manage("yooo".to_string())
+//     .system_tray(SystemTray::new().with_title("tooo"))
+//     .run(tauri::generate_context!())
+//     .expect("error while running tauri application");
+// }

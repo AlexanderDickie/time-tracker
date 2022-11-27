@@ -2,6 +2,7 @@ use rusqlite::{Connection, types::ValueRef};
 use chrono::NaiveDate;
 use std::io::Error;
 use std::collections::HashMap;
+use std::path::Path;
 use serde_json::to_string;
 
 pub struct Storage {
@@ -9,7 +10,7 @@ pub struct Storage {
 }
 
 impl Storage {
-    pub fn build(path: &str) -> Storage {
+    pub fn init<P: AsRef<Path>>(path: P) -> Storage {
         //create if not exists, then load database
         let con = Connection::open(path).unwrap();
         //create if not exists, then load table
