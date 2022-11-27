@@ -9,11 +9,11 @@ import { LineChart,
 export type ChartInput = {
     name: String,
     value: number,
-}
+}[];
 
-export default function Chart({ data }: {data: any}) {
+export default function Chart({chartInput}: any) {
   return (
-        <LineChart width={650} height={300} data={data}>
+        <LineChart width={650} height={300} data={chartInput}>
             <CartesianGrid vertical={false} opacity="0.2" />
             <XAxis
                 />
