@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+use tauri::AppHandle;
+
 pub fn format_time_remaining(elapsed: usize, total: usize) -> String {
     let remaining = total - elapsed;
     let _hours = remaining / 3600;
@@ -5,5 +8,12 @@ pub fn format_time_remaining(elapsed: usize, total: usize) -> String {
     let _secs = remaining % 60;
     format!("{:0>2}:{:0>2}:{:0>2}", _hours,  _minutes, _secs)
 }
+
+pub fn get_db_path(app_handle: &AppHandle) -> PathBuf {
+    app_handle
+        .path_resolver()
+        .resolve_resource("storage.db")
+        .expect("failed to resolve resource")
+} 
 
 

@@ -1,9 +1,7 @@
-use rusqlite::{Connection, types::ValueRef};
+use rusqlite::{Connection};
 use chrono::NaiveDate;
-use std::io::Error;
 use std::collections::HashMap;
 use std::path::Path;
-use serde_json::to_string;
 
 pub struct Storage {
     db: Connection,
