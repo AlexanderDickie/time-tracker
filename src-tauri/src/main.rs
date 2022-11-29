@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent,
     WindowBuilder,
-    WindowUrl};
+    WindowUrl, Manager};
 use tokio::{self,
     time::{interval, Duration},
 };
@@ -16,7 +16,7 @@ static DURATION: usize = 25 * 60;
 
 #[derive(Serialize)]
 struct ChartInput {
-    name: String,
+    label: String,
     value: usize,
 }
 
@@ -40,7 +40,12 @@ fn get_previous(app_handle: tauri::AppHandle) -> Vec<ChartInput> {
     let storage = Storage::init(&get_db_path(&app_handle));
     let today = Local::today().naive_local();
     let x = storage.get_previous(today, 30);
-    x.into_iter().map(|ar| ChartInput{name: ar.0.to_string(), value: ar.1}).collect::<Vec<ChartInput>>()
+    x.into_iter().map(|ar| {
+        let date= ar.0.to_string();
+        let date_day = date.split("-").last().unwrap().to_string();
+        ChartInput{label: date_day, value: ar.1}
+    })
+        .collect::<Vec<ChartInput>>()
 }
 
 #[tauri::command]
@@ -120,7 +125,11 @@ fn main() {
                                 &app_handle,
                                 "alert",
                                 WindowUrl::App("alert".into())
-                            ).build().unwrap();
+                            )
+                                .always_on_top(true)
+                                .decorations(false)
+                                .inner_size(400.0, 200.0)
+                                .build().unwrap();
                             timer_state = TimerState::Finished;
                         }
 
@@ -176,11 +185,20 @@ fn main() {
                         async_runtime::block_on(tx.send(EventMessage::Resume)).unwrap();
                     },
                     "view" => {
-                        WindowBuilder::new(
-                            app,
-                            "view",
-                            WindowUrl::App("index.html".into())
-                        ).build().unwrap();
+                        if let Some(window) = app.get_window("view") {
+                            window.show().unwrap();
+                            window.set_focus().unwrap();
+                        } else {
+                            WindowBuilder::new(
+                                app,
+                                "view",
+                                WindowUrl::App("index.html".into())
+                            )
+                                .title("past blocks")
+                                .center()
+                                .inner_size(1200.0, 700.0)
+                                .build().unwrap();
+                        }
                     },
                     "quit" => {
                         app.exit(0);

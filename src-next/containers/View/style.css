@@ -1,15 +1,17 @@
-.home-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
 .home-header {
   display: flex;
   align-items: center;
   flex-direction: column;
 }
 
+.responsive {
+    width: 100%;
+    height: 100%;
+}
+
+html, body, #app, #app>div {
+  height: 100%
+}
 .home-title {
   margin: 40px;
 }
@@ -37,3 +39,4 @@
   flex: 1 1 150px;
   gap: 24px;
 }
+
