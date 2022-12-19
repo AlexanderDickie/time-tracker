@@ -1,4 +1,4 @@
-import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 export type ChartInput = {
     label: String,
@@ -20,7 +20,7 @@ export default function Chart({data}: any) {
                 }}
             >
                 <XAxis dataKey="label" stroke="blue" />
-                <YAxis domain={[0, 12]} stroke="blue" label={{ value: 'blocks', fill: 'red' }}tickCount={13}/>
+                <YAxis domain={[0, 12]} stroke="blue" tickCount={13}/>
                 <Bar dataKey="value" fill="#8a70e7" label={{ fill: 'red', fontSize: 20 }}/>
                 <ReferenceLine y={6} stroke="darkred" strokeWidth={4} isFront/>
             </BarChart>
