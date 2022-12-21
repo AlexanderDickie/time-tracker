@@ -1,38 +1,29 @@
-use serde::Serialize;
-use tauri::{self, async_runtime, CustomMenuItem, SystemTray, SystemTrayMenu, SystemTrayEvent,
+use tauri::{
+    self,
+    async_runtime,
+    SystemTray, 
+    SystemTrayEvent,
     WindowBuilder,
-    WindowUrl, Manager};
-use tokio::{self,
-    time::{interval, Duration},
+    WindowUrl,
+    Manager
 };
 use chrono::Local;
+use serde::Serialize;
 
 mod storage;
 use storage::Storage;
 mod utils;
-use utils::*;
-
-static DURATION: usize = 25 * 60;
+use utils::get_db_path;
+mod timer;
+use timer::{
+    State,
+    EventMessage
+};
 
 #[derive(Serialize)]
 struct ChartInput {
     label: String,
     value: usize,
-}
-
-#[derive(Debug)]
-enum TimerState {
-    Begun(usize),
-    Paused(usize),
-    Finished,
-}
-
-#[derive(Debug)]
-enum EventMessage {
-    Begin,
-    Pause,
-    Resume,
-    Stop,
 }
 
 #[tauri::command]
@@ -54,137 +45,46 @@ fn close_alert_window(window: tauri::Window) {
 }
 
 fn main() {
-    let (tx, mut rx) = tauri::async_runtime::channel(16);
-
-    let start = CustomMenuItem::new("start".to_string(), "Start");
-    let stop = CustomMenuItem::new("stop".to_string(), "Stop");
-    let pause = CustomMenuItem::new("pause".to_string(), "Pause");
-    let resume = CustomMenuItem::new("resume".to_string(), "Resume");
-    let view = CustomMenuItem::new("view".to_string(), "View");
-    let quit = CustomMenuItem::new("quit".to_string(), "Quit");
-    let tray_menu_inactive = SystemTrayMenu::new()
-        .add_item(start)
-        .add_item(view.clone())
-        .add_item(quit.clone());
-    let _tray_menu_inactive = tray_menu_inactive.clone(); // used to setup system tray
-    let tray_menu_active = SystemTrayMenu::new()
-        .add_item(pause)
-        .add_item(stop.clone())
-        .add_item(view.clone())
-        .add_item(quit.clone());
-    let tray_menu_paused = SystemTrayMenu::new()
-        .add_item(resume)
-        .add_item(stop)
-        .add_item(view)
-        .add_item(quit);
-
+    let (tx, rx) = tauri::async_runtime::channel(16);
     tauri::Builder::default()
         .setup(|app| {
             // dont show app icon on mac os's bottom menubar
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            // spawn thread acting as timer, updating system tray ui and menu on state change
-            let app_handle = app.handle();
-            let mut timer_state = TimerState::Finished;
-            async_runtime::spawn(async move {
-                'outer: loop {
-                    match timer_state {
-
-                        TimerState::Begun(remaining) => {
-                            app_handle.tray_handle().set_menu(tray_menu_active.clone()).unwrap();
-
-                            let mut interval = interval(Duration::from_secs(1));
-                            for i in 0..remaining {
-                                tokio::select! {
-                                    _ = interval.tick() => {
-                                        app_handle
-                                            .tray_handle()
-                                            .set_title(&format_time_remaining(i, remaining))
-                                            .unwrap();
-                                    }
-                                    event_message = rx.recv() => {
-                                        match event_message.unwrap() {
-                                            EventMessage::Pause => {
-                                                timer_state = TimerState::Paused(remaining - i + 1);
-                                                continue 'outer;
-                                            }
-                                            EventMessage::Stop => {
-                                                timer_state = TimerState::Finished;
-                                                continue 'outer;
-                                            },
-                                            _ => panic!("invalid state"),
-                                        }
-                                    }
-                                }
-                            }
-                            let storage = Storage::init(&get_db_path(&app_handle));
-                            let today = Local::today().naive_local();
-                            storage.increment_or_insert_date(today);
-                            WindowBuilder::new(
-                                &app_handle,
-                                "alert",
-                                WindowUrl::App("alert".into())
-                            )
-                                .always_on_top(true)
-                                .decorations(false)
-                                .inner_size(400.0, 200.0)
-                                .build().unwrap();
-                            timer_state = TimerState::Finished;
-                        }
-
-                        TimerState::Paused(remaining) => {
-                            app_handle.tray_handle().set_menu(tray_menu_paused.clone()).unwrap();
-
-                            match rx.recv().await.unwrap() {
-                                EventMessage::Resume => {
-                                    timer_state = TimerState::Begun(remaining);
-                                }
-                                EventMessage::Stop => {
-                                    timer_state = TimerState::Finished;
-                                }
-                                _ => panic!("invalid state"),
-                            }
-
-                        }
-
-                        TimerState::Finished => {
-                            app_handle.tray_handle().set_title("Inactive").unwrap();
-                            app_handle.tray_handle().set_menu(tray_menu_inactive.clone()).unwrap();
-
-                            match rx.recv().await.unwrap() {
-                                EventMessage::Begin => {
-                                    timer_state = TimerState::Begun(DURATION);
-                                }
-                                _ => panic!("invalid state"),
-                            }
-                        }
-
-                    }
-                } 
-
+            let mut state = State::new(app.handle(), rx);
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    state = state.activate().await;
+                }
             });
             Ok(())
         })
         .system_tray(SystemTray::new()
-            .with_menu(_tray_menu_inactive.clone())
+            .with_menu(timer::inactive_menu().clone())
             .with_title("Inactive"))
         .on_system_tray_event(move |app, event| match event {
             SystemTrayEvent::MenuItemClick { id, .. } => {
+                use async_runtime::block_on;
                 match id.as_str() {
-                    "start" => {
-                        async_runtime::block_on(tx.send(EventMessage::Begin)).unwrap();
+                    // send message to our state
+                    "Timer" => {
+                        block_on(tx.send(EventMessage::TimerLeft)).unwrap();
                     },
-                    "stop" => {
-                        async_runtime::block_on(tx.send(EventMessage::Stop)).unwrap();
+                    // "Countdown" => {
+                    //     block_on(tx.send(EventMessage::CountDownLeft(DURATION as u32))).unwrap();
+                    // },
+                    "Pause" => {
+                        block_on(tx.send(EventMessage::Pause)).unwrap();
                     },
-                    "pause" => {
-                        async_runtime::block_on(tx.send(EventMessage::Pause)).unwrap();
+                    "Resume" => {
+                        block_on(tx.send(EventMessage::Resume)).unwrap();
                     },
-                    "resume" => {
-                        async_runtime::block_on(tx.send(EventMessage::Resume)).unwrap();
-                    },
-                    "view" => {
+                    "Stop" => {
+                        block_on(tx.send(EventMessage::Stop)).unwrap();
+                    }
+
+                    "View" => {
                         if let Some(window) = app.get_window("view") {
                             window.show().unwrap();
                             window.set_focus().unwrap();
