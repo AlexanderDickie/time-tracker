@@ -5,7 +5,15 @@ use tauri::{
     SystemTrayMenu, 
 };
 use tokio::{self,
-    time::{interval, Duration},
+    time::{
+        self,
+        interval
+    },
+};
+use chrono::{
+    self,
+    NaiveDateTime,
+    Local,
 };
 
 use super::utils;
@@ -67,7 +75,7 @@ impl Inactive {
         use EventMessage::*;
         match self.rx.recv().await.unwrap() {
             TimerLeft => State::Timer(Timer{ app_handle: self.app_handle, rx: self.rx }),
-            _ => panic!(""),
+            _ => panic!("invalid event message"),
         }
     }
 }
@@ -81,13 +89,17 @@ impl Timer {
     pub async fn activate(&mut self) {
         self.app_handle.tray_handle().set_menu(timer_menu_active()).unwrap();
 
-        let mut t: u32 = 0;
-        let mut interval = interval(Duration::from_secs(1));
+        let mut start = Local::now();
+        let mut elapsed = chrono::Duration::zero();
         let mut paused = false;
+
+        let mut interval = interval(time::Duration::from_secs(1));
 
         'outer: loop {
             // paused
             if paused {
+                let now = Local::now();
+                elapsed = elapsed + (now - start);
                 self.app_handle.tray_handle().set_menu(timer_menu_paused()).unwrap();
                 use EventMessage::*;
                 match self.rx.recv().await.unwrap() {
@@ -95,6 +107,7 @@ impl Timer {
                         self.app_handle.tray_handle().set_menu(timer_menu_active()).unwrap();
                         paused = false;
                         interval.reset();
+                        start = Local::now();
                     },
                     Stop => break 'outer,
                     _ => panic!("invalid event message"),
@@ -104,10 +117,11 @@ impl Timer {
             tokio::select! {
                 // time one second, update title menu
                 _ = interval.tick() => {
-                    t += 1;
+                    let now = Local::now();
+                    let total = elapsed + (now - start);
                     self.app_handle
                         .tray_handle()                                                   
-                        .set_title(&utils::format_time_timer(t))
+                        .set_title(&utils::format_time_timer(total.num_seconds() as u32))
                         .unwrap();
                 },
                 // await event message and react
