@@ -100,8 +100,8 @@ fn main() {
                                 .build().unwrap();
                         }
                     },
-                    "quit" => {
-                        app.exit(0);
+                    "Quit" => {
+                        std::process::exit(0);
                     }
                     _ => {},
                 } 
