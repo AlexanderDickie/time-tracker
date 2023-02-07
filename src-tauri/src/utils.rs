@@ -8,7 +8,7 @@ pub fn format_time_timer(elapsed: u32) -> String {
     format!("{:0>2}:{:0>2}:{:0>2}", _hours,  _minutes, _secs)
 }
 
-pub fn format_time_countdown(elapsed: usize, total: usize) -> String {
+pub fn format_time_countdown(elapsed: u32, total: u32) -> String {
     let remaining = total - elapsed;
     let _hours = remaining / 3600;
     let _minutes = (remaining % 3600) / 60;

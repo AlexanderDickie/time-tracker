@@ -22,6 +22,7 @@ tauri = {git = "https://github.com/tauri-apps/tauri", features = ["api-all", "sy
 tokio = {version = "1.21.2", features = ["full"] }
 rusqlite = {version = "0.28.0", features = ["chrono"] }
 chrono = {version = "0.4.22", features = ["serde"] }
+async-trait = "0.1.64"
 
 [features]
 # by default Tauri runs in production mode

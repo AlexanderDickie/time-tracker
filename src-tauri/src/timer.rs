@@ -12,26 +12,29 @@ use tokio::{self,
 };
 use chrono::{
     self,
-    NaiveDateTime,
     Local,
 };
-
+use async_trait::async_trait;
 use super::utils;
 
 #[derive(Debug)]
 pub enum EventMessage {
     TimerLeft,
-    // CountDownLeft(u32),
+    CountDownLeft,
 
     Pause,
     Resume,
     Stop,
 }
 
+#[async_trait]
+pub trait Activate {
+    async fn activate(mut self) -> State;
+}
+
 pub enum State {
-    Timer(Timer),
-    // Countdown(Countdown),
-    Inactive(Inactive)
+    Inactive(Inactive),
+    Active(Active),
 }
 
 impl State {
@@ -43,21 +46,14 @@ impl State {
             }
         )
     }
-    pub async fn activate(self) -> State {
+}
+
+#[async_trait]
+impl Activate for State {
+    async fn activate(mut self) -> State {
         match self {
-            State::Inactive(inactive) => {
-                inactive.activate().await
-            }, 
-
-            State::Timer(mut timer) => {
-                // begin timer logic
-                timer.activate().await;
-
-                // timer ended, revert to inactive state
-                let Timer {app_handle, rx} = timer;
-                State::Inactive(Inactive{app_handle, rx})
-            }
-            _ => self, 
+            State::Inactive(inactive) => inactive.activate().await,
+            State::Active(active) => active.activate().await,
         }
     }
 }
@@ -67,27 +63,54 @@ pub struct Inactive {
     rx: Receiver<EventMessage>,
 }
 
-impl Inactive {
-    pub async fn activate(mut self) -> State {
+pub struct Active {
+    timing: Timing,
+    app_handle: tauri::AppHandle,
+    rx: Receiver<EventMessage>,
+}
+
+enum Timing {
+    CountUp,
+    CountDown(chrono::Duration),
+}
+
+#[async_trait]
+impl Activate for Inactive {
+    async fn activate(mut self) -> State {
         self.app_handle.tray_handle().set_title("Inactive").unwrap();
         self.app_handle.tray_handle().set_menu(inactive_menu()).unwrap();
 
-        use EventMessage::*;
         match self.rx.recv().await.unwrap() {
-            TimerLeft => State::Timer(Timer{ app_handle: self.app_handle, rx: self.rx }),
+            EventMessage::TimerLeft => 
+                State::Active(Active {
+                    timing: Timing::CountUp,
+                    app_handle: self.app_handle,
+                    rx: self.rx,
+                }),
+
+            EventMessage::CountDownLeft => 
+                State::Active(Active {
+                    timing: Timing::CountDown(chrono::Duration::minutes(60)), // todo: change to user's choice
+                    app_handle: self.app_handle,
+                    rx: self.rx,
+                }),
+
             _ => panic!("invalid event message"),
         }
     }
 }
 
-pub struct Timer {
-    app_handle: tauri::AppHandle,
-    rx: Receiver<EventMessage>,
-}
 
-impl Timer {
-    pub async fn activate(&mut self) {
-        self.app_handle.tray_handle().set_menu(timer_menu_active()).unwrap();
+#[async_trait]
+impl Activate for Active {
+    async fn activate(mut self) -> State {
+        // set system tray menu for active state
+        if let Timing::CountUp = self.timing {
+            self.app_handle.tray_handle().set_menu(timer_menu_active()).unwrap();
+        } else {
+
+            self.app_handle.tray_handle().set_menu(timer_menu_active()).unwrap();
+        }
 
         let mut start = Local::now();
         let mut elapsed = chrono::Duration::zero();
@@ -96,20 +119,27 @@ impl Timer {
         let mut interval = interval(time::Duration::from_secs(1));
 
         'outer: loop {
+            // time has elapsed on countdown
+            if let Timing::CountDown(total_duration) = (&self).timing {
+                if elapsed >= total_duration {
+                    break 'outer;
+                }
+            } 
+
             // paused
             if paused {
                 let now = Local::now();
                 elapsed = elapsed + (now - start);
                 self.app_handle.tray_handle().set_menu(timer_menu_paused()).unwrap();
-                use EventMessage::*;
+
                 match self.rx.recv().await.unwrap() {
-                    Resume => {
+                    EventMessage::Resume => {
                         self.app_handle.tray_handle().set_menu(timer_menu_active()).unwrap();
                         paused = false;
                         interval.reset();
                         start = Local::now();
                     },
-                    Stop => break 'outer,
+                    EventMessage::Stop => break 'outer,
                     _ => panic!("invalid event message"),
                 }
             }
@@ -119,10 +149,21 @@ impl Timer {
                 _ = interval.tick() => {
                     let now = Local::now();
                     let total = elapsed + (now - start);
+
+                    // set system tray display to seconds elapsed/remaining
+                    if let Timing::CountDown(total_duration) = self.timing {
                     self.app_handle
                         .tray_handle()                                                   
-                        .set_title(&utils::format_time_timer(total.num_seconds() as u32))
+                        .set_title(&utils::format_time_countdown(total.num_seconds() as u32, 
+                                total_duration.num_seconds() as u32))
                         .unwrap();
+                    } else {
+                        self.app_handle
+                            .tray_handle()                                                   
+                            .set_title(&utils::format_time_timer(total.num_seconds() as u32))
+                            .unwrap();
+                    }
+
                 },
                 // await event message and react
                 event_message = self.rx.recv() => {
@@ -137,6 +178,10 @@ impl Timer {
                 },
             }
         }
+
+        // return Inactive state
+        let Active {timing: _, app_handle, rx} = self;
+        State::Inactive(Inactive {app_handle, rx})
     }
 }
 

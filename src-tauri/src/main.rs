@@ -17,7 +17,8 @@ use utils::get_db_path;
 mod timer;
 use timer::{
     State,
-    EventMessage
+    EventMessage,
+    Activate,
 };
 
 #[derive(Serialize)]
@@ -71,9 +72,9 @@ fn main() {
                     "Timer" => {
                         block_on(tx.send(EventMessage::TimerLeft)).unwrap();
                     },
-                    // "Countdown" => {
-                    //     block_on(tx.send(EventMessage::CountDownLeft(DURATION as u32))).unwrap();
-                    // },
+                    "Countdown" => {
+                        block_on(tx.send(EventMessage::CountDownLeft)).unwrap();
+                    },
                     "Pause" => {
                         block_on(tx.send(EventMessage::Pause)).unwrap();
                     },
